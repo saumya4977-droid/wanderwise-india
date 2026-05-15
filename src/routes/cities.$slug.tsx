@@ -1,0 +1,242 @@
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { useMemo, useState } from "react";
+import { audiences, cityBySlug, type Audience } from "@/data/cities";
+
+export const Route = createFileRoute("/cities/$slug")({
+  loader: ({ params }) => {
+    const city = cityBySlug(params.slug);
+    if (!city) throw notFound();
+    return { city };
+  },
+  head: ({ loaderData }) => ({
+    meta: loaderData
+      ? [
+          { title: `${loaderData.city.name} — Travel Bharat` },
+          { name: "description", content: `${loaderData.city.tagline}. Weather, places, fares and stays in ${loaderData.city.name}, ${loaderData.city.state}.` },
+          { property: "og:title", content: `${loaderData.city.name} · Travel Bharat` },
+          { property: "og:description", content: loaderData.city.tagline },
+          { property: "og:image", content: loaderData.city.hero },
+        ]
+      : [],
+  }),
+  component: CityPage,
+});
+
+type Tab = "Weather" | "Places" | "Transport" | "Stay";
+const tabs: Tab[] = ["Weather", "Places", "Transport", "Stay"];
+
+function CityPage() {
+  const { city } = Route.useLoaderData();
+  const [tab, setTab] = useState<Tab>("Weather");
+  const [audience, setAudience] = useState<"" | Audience>("");
+  const [km, setKm] = useState(8);
+
+  const placesFiltered = useMemo(
+    () => audience ? city.places.filter(p => p.audiences.includes(audience)) : city.places,
+    [city, audience]
+  );
+
+  const taxiFare = 150 + km * 18;
+  const autoFare = 25 + km * 14;
+
+  return (
+    <article>
+      {/* Cover */}
+      <header className="relative h-[70vh] min-h-[480px] overflow-hidden">
+        <img src={city.hero} alt={city.name} className="h-full w-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-black/10 to-background" />
+        <div className="relative z-10 mx-auto flex h-full max-w-7xl flex-col justify-end px-6 pb-12">
+          <Link to="/cities" className="eyebrow text-saffron-soft hover:text-white">← All destinations</Link>
+          <span className="eyebrow mt-3 text-saffron-soft">{city.region} India · {city.state}</span>
+          <h1 className="display mt-2 text-[clamp(3rem,8vw,7rem)] text-white">{city.name}.</h1>
+          <p className="mt-3 max-w-xl text-lg text-white/90">{city.tagline}</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            {city.vibe.map((v) => (
+              <span key={v} className="rounded-full border border-white/40 px-3 py-1 text-xs text-white">{v}</span>
+            ))}
+          </div>
+        </div>
+      </header>
+
+      {/* Tabs */}
+      <div className="sticky top-[65px] z-30 border-b border-border bg-background/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-6">
+          {tabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`relative px-5 py-4 text-sm transition ${tab === t ? "text-primary" : "text-muted-foreground hover:text-primary"}`}
+            >
+              {t}
+              {tab === t && <span className="absolute inset-x-3 -bottom-px h-0.5 bg-saffron" />}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-7xl px-6 py-16">
+        {tab === "Weather" && (
+          <div className="grid gap-10 md:grid-cols-12">
+            <div className="md:col-span-5">
+              <span className="eyebrow text-teal-deep">Right now in {city.name}</span>
+              <div className="mt-3 display text-[120px] leading-none text-primary">{city.weather.current.tempC}°</div>
+              <div className="text-xl text-muted-foreground">{city.weather.current.condition}</div>
+              <div className="mt-6 grid grid-cols-2 gap-4">
+                <Stat label="Humidity" value={`${city.weather.current.humidity}%`} />
+                <Stat label="Wind" value={`${city.weather.current.wind} km/h`} />
+              </div>
+            </div>
+            <div className="md:col-span-7">
+              <span className="eyebrow text-saffron">Best season to visit</span>
+              <h2 className="display mt-3 text-5xl text-primary">{city.weather.best}</h2>
+              <p className="mt-4 text-muted-foreground">{city.weather.notes}</p>
+              <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+                {[
+                  ["Spring", "Mar–May", "Festivals & blooms"],
+                  ["Summer", "Jun–Aug", "Hill escapes"],
+                  ["Monsoon", "Jul–Sep", "Lush, dramatic"],
+                  ["Winter", "Dec–Feb", "Crisp & cultural"],
+                ].map(([s, m, n]) => (
+                  <div key={s} className="rounded-2xl border border-border p-4">
+                    <div className="display text-xl text-primary">{s}</div>
+                    <div className="eyebrow text-muted-foreground">{m}</div>
+                    <div className="mt-2 text-xs text-muted-foreground">{n}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "Places" && (
+          <div>
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <span className="eyebrow text-saffron">Places worth your time</span>
+                <h2 className="display mt-3 text-5xl text-primary">Six picks in {city.name}.</h2>
+              </div>
+              <div className="flex gap-2 overflow-x-auto">
+                <button onClick={() => setAudience("")} className={`rounded-full px-4 py-1.5 text-xs ${audience === "" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>Anyone</button>
+                {audiences.map(a => (
+                  <button key={a} onClick={() => setAudience(a)} className={`rounded-full px-4 py-1.5 text-xs ${audience === a ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{a}</button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {placesFiltered.map((p, i) => (
+                <div key={p.name + i} className="rounded-2xl border border-border bg-card p-6">
+                  <div className="eyebrow text-teal-deep">{p.category}</div>
+                  <h3 className="display mt-2 text-2xl text-primary">{p.name}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground">{p.blurb}</p>
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    {p.audiences.map(a => <span key={a} className="rounded-full bg-secondary px-2 py-0.5 text-[11px]">{a}</span>)}
+                  </div>
+                </div>
+              ))}
+              {placesFiltered.length === 0 && (
+                <p className="text-muted-foreground">No matches for that group — try another filter.</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {tab === "Transport" && (
+          <div className="grid gap-10 md:grid-cols-12">
+            <div className="md:col-span-7">
+              <span className="eyebrow text-teal-deep">Real fares · Live indications</span>
+              <h2 className="display mt-3 text-5xl text-primary">Getting around {city.name}.</h2>
+              <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                <Fare label="Auto rickshaw" value={city.transport.auto} />
+                <Fare label="City / AC bus" value={city.transport.bus} />
+                <Fare label="Taxi (cab)" value={city.transport.taxi} />
+                <Fare label="Flights from" value={city.transport.flightFrom ?? "—"} />
+              </div>
+
+              <div className="mt-8 rounded-2xl border border-border bg-card p-6">
+                <span className="eyebrow text-saffron">Fare calculator</span>
+                <div className="mt-3 flex items-center gap-4">
+                  <input type="range" min={1} max={50} value={km} onChange={(e) => setKm(Number(e.target.value))} className="flex-1 accent-[oklch(0.46_0.10_200)]" />
+                  <div className="display text-2xl text-primary">{km} km</div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-xl bg-secondary p-3">Auto · <span className="display text-xl text-primary">₹{autoFare}</span></div>
+                  <div className="rounded-xl bg-secondary p-3">Taxi · <span className="display text-xl text-primary">₹{taxiFare}</span></div>
+                </div>
+              </div>
+            </div>
+            <div className="md:col-span-5">
+              <span className="eyebrow text-teal-deep">Book in one tap</span>
+              <div className="mt-3 space-y-3">
+                {[
+                  ["RedBus", "Buses across India", "https://www.redbus.in/"],
+                  ["IRCTC", "Train tickets", "https://www.irctc.co.in/"],
+                  ["MakeMyTrip", "Flights & buses", "https://www.makemytrip.com/"],
+                ].map(([name, desc, url]) => (
+                  <a key={name} href={url} target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-2xl border border-border bg-card p-5 hover:border-primary">
+                    <div>
+                      <div className="display text-2xl text-primary">{name}</div>
+                      <div className="text-xs text-muted-foreground">{desc}</div>
+                    </div>
+                    <span className="text-saffron">→</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab === "Stay" && (
+          <div>
+            <span className="eyebrow text-saffron">Where to sleep</span>
+            <h2 className="display mt-3 text-5xl text-primary">Budget to luxe in {city.name}.</h2>
+            <div className="mt-10 grid gap-6 md:grid-cols-3">
+              <StayCard tier="Budget" data={city.stay.budget} accent="teal" />
+              <StayCard tier="Mid-range" data={city.stay.mid} accent="indigo" />
+              <StayCard tier="Luxury" data={city.stay.luxury} accent="saffron" />
+            </div>
+            <div className="mt-10 flex flex-wrap gap-3">
+              {[
+                ["MakeMyTrip", "https://www.makemytrip.com/hotels/"],
+                ["OYO", "https://www.oyorooms.com/"],
+                ["Booking.com", "https://www.booking.com/"],
+              ].map(([n, u]) => (
+                <a key={n} href={u} target="_blank" rel="noreferrer" className="rounded-full border border-border bg-card px-5 py-2.5 text-sm hover:border-primary">
+                  Book on {n} →
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border p-4">
+      <div className="eyebrow text-muted-foreground">{label}</div>
+      <div className="display mt-1 text-3xl text-primary">{value}</div>
+    </div>
+  );
+}
+function Fare({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="eyebrow text-teal-deep">{label}</div>
+      <div className="display mt-2 text-2xl text-primary">{value}</div>
+    </div>
+  );
+}
+function StayCard({ tier, data, accent }: { tier: string; data: { name: string; price: string }; accent: "teal" | "indigo" | "saffron" }) {
+  const colorClass = accent === "saffron" ? "text-saffron" : accent === "teal" ? "text-teal-deep" : "text-primary";
+  return (
+    <div className="rounded-3xl border border-border bg-card p-7">
+      <span className={`eyebrow ${colorClass}`}>{tier}</span>
+      <h3 className="display mt-2 text-3xl text-primary">{data.name}</h3>
+      <div className="mt-3 text-muted-foreground">From</div>
+      <div className="display text-4xl text-primary">{data.price}</div>
+      <div className="mt-1 text-xs text-muted-foreground">per night, indicative</div>
+    </div>
+  );
+}
