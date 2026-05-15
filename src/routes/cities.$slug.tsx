@@ -26,7 +26,7 @@ type Tab = "Weather" | "Places" | "Transport" | "Stay";
 const tabs: Tab[] = ["Weather", "Places", "Transport", "Stay"];
 
 function CityPage() {
-  const { city } = Route.useLoaderData();
+  const { city } = Route.useLoaderData() as { city: City };
   const [tab, setTab] = useState<Tab>("Weather");
   const [audience, setAudience] = useState<"" | Audience>("");
   const [km, setKm] = useState(8);
