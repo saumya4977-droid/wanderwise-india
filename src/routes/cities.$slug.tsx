@@ -1,9 +1,9 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { audiences, cityBySlug, type Audience } from "@/data/cities";
+import { audiences, cityBySlug, type Audience, type City } from "@/data/cities";
 
 export const Route = createFileRoute("/cities/$slug")({
-  loader: ({ params }) => {
+  loader: ({ params }): { city: City } => {
     const city = cityBySlug(params.slug);
     if (!city) throw notFound();
     return { city };
