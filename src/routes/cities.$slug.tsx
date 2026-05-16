@@ -1,6 +1,9 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { audiences, cityBySlug, type Audience, type City } from "@/data/cities";
+import { getLiveFare } from "@/lib/fares.functions";
 
 export const Route = createFileRoute("/cities/$slug")({
   loader: ({ params }): { city: City } => {
