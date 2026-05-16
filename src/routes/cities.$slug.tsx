@@ -39,8 +39,17 @@ function CityPage() {
     [city, audience]
   );
 
-  const taxiFare = 150 + km * 18;
-  const autoFare = 25 + km * 14;
+  const fetchFare = useServerFn(getLiveFare);
+  const { data: liveFare, isFetching: fareLoading, isError: fareError, refetch: refetchFare } = useQuery({
+    queryKey: ["fare", city.slug, km],
+    queryFn: () => fetchFare({ data: { citySlug: city.slug, km } }),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    enabled: tab === "Transport",
+  });
+
+  const taxiFare = liveFare?.taxi.total ?? 150 + km * 18;
+  const autoFare = liveFare?.auto.total ?? 25 + km * 14;
 
   return (
     <article>
