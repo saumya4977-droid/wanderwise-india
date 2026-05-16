@@ -1,6 +1,9 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@/hooks/use-auth";
 
 export function SiteHeader() {
+  const { user, signOut, loading } = useAuth();
+  const nav = useNavigate();
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/85 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
@@ -14,9 +17,23 @@ export function SiteHeader() {
           <Link to="/pricing" activeProps={{ className: "text-primary" }} className="hover:text-primary">Pricing</Link>
           <Link to="/guides" activeProps={{ className: "text-primary" }} className="hover:text-primary">For Guides</Link>
         </nav>
-        <Link to="/pricing" className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground transition hover:bg-primary/90">
-          Start exploring
-        </Link>
+        <div className="flex items-center gap-3">
+          {!loading && user ? (
+            <>
+              <span className="hidden text-xs text-muted-foreground sm:inline">{user.email}</span>
+              <button
+                onClick={async () => { await signOut(); nav({ to: "/" }); }}
+                className="rounded-full border border-border px-4 py-2 text-sm hover:bg-accent"
+              >
+                Sign out
+              </button>
+            </>
+          ) : (
+            <Link to="/auth" className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
+              Sign in
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );
