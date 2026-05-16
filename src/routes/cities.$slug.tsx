@@ -155,25 +155,64 @@ function CityPage() {
         {tab === "Transport" && (
           <div className="grid gap-10 md:grid-cols-12">
             <div className="md:col-span-7">
-              <span className="eyebrow text-teal-deep">Real fares · Live indications</span>
+              <div className="flex items-center justify-between gap-4">
+                <span className="eyebrow text-teal-deep">
+                  {liveFare?.source === "live" && "● Live · updated just now"}
+                  {liveFare?.source === "provider" && "● Live · provider feed"}
+                  {liveFare?.source === "fallback" && "○ Cached fallback"}
+                  {!liveFare && "Real fares · Live indications"}
+                </span>
+                <button
+                  onClick={() => refetchFare()}
+                  disabled={fareLoading}
+                  className="text-xs text-muted-foreground hover:text-primary disabled:opacity-50"
+                >
+                  {fareLoading ? "Refreshing…" : "↻ Refresh"}
+                </button>
+              </div>
               <h2 className="display mt-3 text-5xl text-primary">Getting around {city.name}.</h2>
+
+              {liveFare && (
+                <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                  {liveFare.surge > 1 && (
+                    <span className="rounded-full bg-saffron/15 px-3 py-1 text-saffron">
+                      {liveFare.nightCharge ? "Night surcharge" : "Peak surge"} · ×{liveFare.surge.toFixed(1)}
+                    </span>
+                  )}
+                  <span className="rounded-full bg-secondary px-3 py-1 text-muted-foreground">{liveFare.note}</span>
+                </div>
+              )}
+              {fareError && (
+                <p className="mt-3 text-xs text-saffron">Couldn't reach the live feed — showing static rates.</p>
+              )}
+
               <div className="mt-8 grid gap-4 sm:grid-cols-2">
-                <Fare label="Auto rickshaw" value={city.transport.auto} />
-                <Fare label="City / AC bus" value={city.transport.bus} />
-                <Fare label="Taxi (cab)" value={city.transport.taxi} />
+                <Fare label="Auto rickshaw" value={liveFare ? `₹${liveFare.auto.base} base + ₹${liveFare.auto.perKm}/km` : city.transport.auto} />
+                <Fare label="City / AC bus" value={liveFare ? `₹${liveFare.bus.min}–₹${liveFare.bus.max}` : city.transport.bus} />
+                <Fare label="Taxi (cab)" value={liveFare ? `₹${liveFare.taxi.base} base + ₹${liveFare.taxi.perKm}/km` : city.transport.taxi} />
                 <Fare label="Flights from" value={city.transport.flightFrom ?? "—"} />
               </div>
 
               <div className="mt-8 rounded-2xl border border-border bg-card p-6">
-                <span className="eyebrow text-saffron">Fare calculator</span>
+                <span className="eyebrow text-saffron">Fare calculator · {km} km</span>
                 <div className="mt-3 flex items-center gap-4">
                   <input type="range" min={1} max={50} value={km} onChange={(e) => setKm(Number(e.target.value))} className="flex-1 accent-[oklch(0.46_0.10_200)]" />
                   <div className="display text-2xl text-primary">{km} km</div>
                 </div>
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl bg-secondary p-3">Auto · <span className="display text-xl text-primary">₹{autoFare}</span></div>
-                  <div className="rounded-xl bg-secondary p-3">Taxi · <span className="display text-xl text-primary">₹{taxiFare}</span></div>
+                  <div className="rounded-xl bg-secondary p-3">
+                    Auto · <span className="display text-xl text-primary">₹{autoFare}</span>
+                    {fareLoading && <span className="ml-2 text-xs text-muted-foreground">updating…</span>}
+                  </div>
+                  <div className="rounded-xl bg-secondary p-3">
+                    Taxi · <span className="display text-xl text-primary">₹{taxiFare}</span>
+                  </div>
                 </div>
+                {liveFare && (
+                  <p className="mt-3 text-[11px] text-muted-foreground">
+                    Estimate refreshes every 60s · source: {liveFare.source}
+                  </p>
+                )}
               </div>
             </div>
             <div className="md:col-span-5">
