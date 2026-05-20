@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
-import { allCities } from "@/data/cities";
+import { cities as allCitiesData, type City } from "@/data/cities";
 import { listFareOverrides, upsertFareOverride, deleteFareOverride, type FareOverride } from "@/lib/fare-admin.functions";
 
 export const Route = createFileRoute("/admin/fares")({
