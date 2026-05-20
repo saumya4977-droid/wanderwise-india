@@ -1,11 +1,19 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { z } from "zod";
 import { audiences, cityBySlug, type Audience, type City } from "@/data/cities";
 import { getLiveFare, type FareLeg } from "@/lib/fares.functions";
 
+const searchSchema = z.object({
+  km: z.number().int().min(1).max(50).optional(),
+  pickup: z.number().int().min(0).max(23).optional(),
+  tab: z.enum(["Weather", "Places", "Transport", "Stay"]).optional(),
+});
+
 export const Route = createFileRoute("/cities/$slug")({
+  validateSearch: searchSchema,
   loader: ({ params }): { city: City } => {
     const city = cityBySlug(params.slug);
     if (!city) throw notFound();
@@ -30,10 +38,22 @@ const tabs: Tab[] = ["Weather", "Places", "Transport", "Stay"];
 
 function CityPage() {
   const { city } = Route.useLoaderData() as { city: City };
-  const [tab, setTab] = useState<Tab>("Weather");
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const [tab, setTab] = useState<Tab>(search.tab ?? "Weather");
   const [audience, setAudience] = useState<"" | Audience>("");
-  const [km, setKm] = useState(8);
-  const [pickupHour, setPickupHour] = useState<number | "now">("now");
+  const [km, setKmRaw] = useState(search.km ?? 8);
+  const [pickupHour, setPickupHourRaw] = useState<number | "now">(search.pickup ?? "now");
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+
+  const setKm = (v: number) => {
+    setKmRaw(v);
+    navigate({ search: (s) => ({ ...s, km: v }), replace: true });
+  };
+  const setPickupHour = (v: number | "now") => {
+    setPickupHourRaw(v);
+    navigate({ search: (s) => ({ ...s, pickup: v === "now" ? undefined : v }), replace: true });
+  };
 
   const placesFiltered = useMemo(
     () => audience ? city.places.filter(p => p.audiences.includes(audience)) : city.places,
@@ -51,6 +71,29 @@ function CityPage() {
 
   const taxiFare = liveFare?.taxi.total ?? 150 + km * 18;
   const autoFare = liveFare?.auto.total ?? 25 + km * 14;
+
+  const handleShare = async () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("km", String(km));
+    if (pickupHour !== "now") url.searchParams.set("pickup", String(pickupHour));
+    else url.searchParams.delete("pickup");
+    url.searchParams.set("tab", "Transport");
+    const link = url.toString();
+    const title = `${city.name} fare estimate · ${km} km`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url: link });
+        setShareMsg("Shared!");
+      } else {
+        await navigator.clipboard.writeText(link);
+        setShareMsg("Link copied to clipboard");
+      }
+    } catch {
+      setShareMsg("Couldn't share — try again");
+    }
+    setTimeout(() => setShareMsg(null), 2500);
+  };
+
 
   return (
     <article>
