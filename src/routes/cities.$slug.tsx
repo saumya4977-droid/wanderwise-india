@@ -417,3 +417,46 @@ function Row({ k, v, accent, bold }: { k: string; v: string; accent?: boolean; b
     </div>
   );
 }
+
+function BusBreakdown({
+  busMin, busMax, surge, peak, nightCharge, loading, fallback,
+}: {
+  busMin: number | undefined;
+  busMax: number | undefined;
+  surge: number;
+  peak: boolean;
+  nightCharge: boolean;
+  loading: boolean;
+  fallback: string;
+}) {
+  const hasLive = typeof busMin === "number" && typeof busMax === "number";
+  const minTotal = hasLive ? Math.round(busMin! * surge) : null;
+  const maxTotal = hasLive ? Math.round(busMax! * surge) : null;
+  return (
+    <div className="rounded-xl border border-border bg-secondary/40 p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="eyebrow text-teal-deep">City / AC bus</span>
+        {loading && <span className="text-[10px] text-muted-foreground">updating…</span>}
+      </div>
+      <div className="display mt-1 text-2xl text-primary">
+        {hasLive ? `₹${minTotal}–₹${maxTotal}` : fallback}
+      </div>
+      {hasLive ? (
+        <dl className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+          <Row k="Short hop (per-range min)" v={`₹${busMin}`} />
+          <Row k="Long route (per-range max)" v={`₹${busMax}`} />
+          {surge > 1 && (
+            <Row
+              k={`${nightCharge ? "Night" : peak ? "Peak" : "Surge"} ×${surge.toFixed(2)}`}
+              v={`+₹${Math.round((busMax! - busMin!) * (surge - 1)) + Math.round(busMin! * (surge - 1))}`}
+              accent
+            />
+          )}
+          <Row k="Adjusted range" v={`₹${minTotal}–₹${maxTotal}`} bold />
+        </dl>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">Indicative only — most state buses use distance slabs.</p>
+      )}
+    </div>
+  );
+}
