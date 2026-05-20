@@ -33,6 +33,7 @@ function CityPage() {
   const [tab, setTab] = useState<Tab>("Weather");
   const [audience, setAudience] = useState<"" | Audience>("");
   const [km, setKm] = useState(8);
+  const [pickupHour, setPickupHour] = useState<number | "now">("now");
 
   const placesFiltered = useMemo(
     () => audience ? city.places.filter(p => p.audiences.includes(audience)) : city.places,
@@ -41,8 +42,8 @@ function CityPage() {
 
   const fetchFare = useServerFn(getLiveFare);
   const { data: liveFare, isFetching: fareLoading, isError: fareError, refetch: refetchFare } = useQuery({
-    queryKey: ["fare", city.slug, km],
-    queryFn: () => fetchFare({ data: { citySlug: city.slug, km } }),
+    queryKey: ["fare", city.slug, km, pickupHour],
+    queryFn: () => fetchFare({ data: { citySlug: city.slug, km, ...(pickupHour !== "now" ? { pickupHour } : {}) } }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     enabled: tab === "Transport",
