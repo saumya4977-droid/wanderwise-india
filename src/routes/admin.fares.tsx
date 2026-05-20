@@ -4,24 +4,35 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { cities as allCitiesData, type City } from "@/data/cities";
-import { listFareOverrides, upsertFareOverride, deleteFareOverride, type FareOverride } from "@/lib/fare-admin.functions";
+import {
+  listFareOverrides,
+  upsertFareOverride,
+  deleteFareOverride,
+  listAuditEntries,
+  upsertFareOverrideSchema,
+  type FareOverride,
+  type AuditEntry,
+} from "@/lib/fare-admin.functions";
 
 export const Route = createFileRoute("/admin/fares")({
   head: () => ({ meta: [{ title: "Admin · Fare Overrides — Travel Bharat" }] }),
   component: AdminFaresPage,
 });
 
-type FormState = {
-  city_slug: string;
-  auto_base: string;
-  auto_per_km: string;
-  taxi_base: string;
-  taxi_per_km: string;
-  bus_min: string;
-  bus_max: string;
-  peak_multiplier: string;
-  night_multiplier: string;
-};
+type FormKey =
+  | "auto_base" | "auto_per_km"
+  | "taxi_base" | "taxi_per_km"
+  | "bus_min" | "bus_max"
+  | "peak_multiplier" | "night_multiplier";
+
+type FormState = Record<FormKey, string> & { city_slug: string };
+
+const FIELD_KEYS: FormKey[] = [
+  "auto_base", "auto_per_km",
+  "taxi_base", "taxi_per_km",
+  "bus_min", "bus_max",
+  "peak_multiplier", "night_multiplier",
+];
 
 const empty = (slug: string): FormState => ({
   city_slug: slug,
@@ -34,7 +45,7 @@ const empty = (slug: string): FormState => ({
 function toNum(v: string): number | null {
   if (v.trim() === "") return null;
   const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? n : NaN;
 }
 
 function AdminFaresPage() {
@@ -42,10 +53,12 @@ function AdminFaresPage() {
   const list = useServerFn(listFareOverrides);
   const upsert = useServerFn(upsertFareOverride);
   const remove = useServerFn(deleteFareOverride);
+  const audit = useServerFn(listAuditEntries);
   const qc = useQueryClient();
 
   const cities = useMemo<City[]>(() => allCitiesData, []);
   const [form, setForm] = useState<FormState>(() => empty(cities[0]?.slug ?? ""));
+  const [errors, setErrors] = useState<Partial<Record<FormKey | "form", string>>>({});
   const [msg, setMsg] = useState<string | null>(null);
 
   const { data: overrides, isLoading, error } = useQuery({
@@ -54,35 +67,67 @@ function AdminFaresPage() {
     enabled: !!user,
   });
 
+  const { data: auditEntries } = useQuery({
+    queryKey: ["fare-audit", form.city_slug],
+    queryFn: () => audit({ data: { city_slug: form.city_slug, limit: 25 } }),
+    enabled: !!user,
+  });
+
+  function validate(): { ok: true; values: ReturnType<typeof buildPayload> } | { ok: false } {
+    const errs: Partial<Record<FormKey | "form", string>> = {};
+
+    // Local field-level: reject NaN (non-numeric strings)
+    for (const k of FIELD_KEYS) {
+      const raw = form[k];
+      if (raw.trim() === "") continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) errs[k] = "Not a number";
+      else if (n < 0) errs[k] = "Cannot be negative";
+    }
+
+    if (Object.keys(errs).length === 0) {
+      const payload = buildPayload(form);
+      const parsed = upsertFareOverrideSchema.safeParse(payload);
+      if (!parsed.success) {
+        for (const issue of parsed.error.issues) {
+          const path = issue.path[0] as FormKey | undefined;
+          if (path) errs[path] = issue.message;
+          else errs.form = issue.message;
+        }
+      } else {
+        setErrors({});
+        return { ok: true, values: payload };
+      }
+    }
+    setErrors(errs);
+    return { ok: false };
+  }
+
   const saveMut = useMutation({
-    mutationFn: () =>
-      upsert({
-        data: {
-          city_slug: form.city_slug,
-          auto_base: toNum(form.auto_base),
-          auto_per_km: toNum(form.auto_per_km),
-          taxi_base: toNum(form.taxi_base),
-          taxi_per_km: toNum(form.taxi_per_km),
-          bus_min: toNum(form.bus_min),
-          bus_max: toNum(form.bus_max),
-          peak_multiplier: toNum(form.peak_multiplier),
-          night_multiplier: toNum(form.night_multiplier),
-        },
-      }),
+    mutationFn: () => {
+      const v = validate();
+      if (!v.ok) return Promise.reject(new Error("Fix validation errors first"));
+      return upsert({ data: v.values });
+    },
     onSuccess: () => {
       setMsg("Saved.");
       qc.invalidateQueries({ queryKey: ["fare-overrides"] });
+      qc.invalidateQueries({ queryKey: ["fare-audit"] });
     },
     onError: (e: Error) => setMsg(e.message),
   });
 
   const deleteMut = useMutation({
     mutationFn: (slug: string) => remove({ data: { city_slug: slug } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["fare-overrides"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["fare-overrides"] });
+      qc.invalidateQueries({ queryKey: ["fare-audit"] });
+    },
   });
 
   useEffect(() => {
     const o = overrides?.find((x) => x.city_slug === form.city_slug);
+    setErrors({});
     setForm((f) => ({
       ...empty(f.city_slug),
       auto_base: o?.auto_base?.toString() ?? "",
@@ -108,6 +153,7 @@ function AdminFaresPage() {
   }
 
   const isForbidden = error instanceof Error && /Forbidden|admin/i.test(error.message);
+  const hasOverride = overrides?.some((o) => o.city_slug === form.city_slug);
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-16">
@@ -115,7 +161,7 @@ function AdminFaresPage() {
       <h1 className="display mt-2 text-5xl text-primary">Fare overrides</h1>
       <p className="mt-3 max-w-2xl text-muted-foreground">
         Override per-city base rates and surge multipliers. Empty fields fall back to built-in defaults.
-        Changes take effect within ~60 seconds (cache TTL).
+        Multipliers must be between 1× and 3×. Changes take effect within ~60 seconds.
       </p>
 
       {isForbidden && (
@@ -125,58 +171,62 @@ function AdminFaresPage() {
       )}
 
       {!isForbidden && (
-        <>
-          <div className="mt-10 grid gap-8 md:grid-cols-12">
-            <form
-              className="md:col-span-7 rounded-2xl border border-border bg-card p-6"
-              onSubmit={(e) => { e.preventDefault(); setMsg(null); saveMut.mutate(); }}
-            >
-              <label className="block text-sm">
-                <span className="eyebrow text-teal-deep">City</span>
-                <select
-                  className="mt-1 w-full rounded-lg border border-border bg-background p-2"
-                  value={form.city_slug}
-                  onChange={(e) => setForm((f) => ({ ...f, city_slug: e.target.value }))}
-                >
-                  {cities.map((c) => (
-                    <option key={c.slug} value={c.slug}>{c.name} — {c.state}</option>
-                  ))}
-                </select>
-              </label>
+        <div className="mt-10 grid gap-8 md:grid-cols-12">
+          <form
+            className="md:col-span-7 rounded-2xl border border-border bg-card p-6"
+            onSubmit={(e) => { e.preventDefault(); setMsg(null); saveMut.mutate(); }}
+          >
+            <label className="block text-sm">
+              <span className="eyebrow text-teal-deep">City</span>
+              <select
+                className="mt-1 w-full rounded-lg border border-border bg-background p-2"
+                value={form.city_slug}
+                onChange={(e) => setForm((f) => ({ ...f, city_slug: e.target.value }))}
+              >
+                {cities.map((c) => (
+                  <option key={c.slug} value={c.slug}>{c.name} — {c.state}</option>
+                ))}
+              </select>
+            </label>
 
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <Field label="Auto base ₹" value={form.auto_base} onChange={(v) => setForm((f) => ({ ...f, auto_base: v }))} placeholder="25" />
-                <Field label="Auto ₹/km"   value={form.auto_per_km} onChange={(v) => setForm((f) => ({ ...f, auto_per_km: v }))} placeholder="14" />
-                <Field label="Taxi base ₹" value={form.taxi_base} onChange={(v) => setForm((f) => ({ ...f, taxi_base: v }))} placeholder="150" />
-                <Field label="Taxi ₹/km"   value={form.taxi_per_km} onChange={(v) => setForm((f) => ({ ...f, taxi_per_km: v }))} placeholder="18" />
-                <Field label="Bus min ₹"   value={form.bus_min} onChange={(v) => setForm((f) => ({ ...f, bus_min: v }))} placeholder="15" />
-                <Field label="Bus max ₹"   value={form.bus_max} onChange={(v) => setForm((f) => ({ ...f, bus_max: v }))} placeholder="120" />
-                <Field label="Peak ×"      value={form.peak_multiplier} onChange={(v) => setForm((f) => ({ ...f, peak_multiplier: v }))} placeholder="1.3" />
-                <Field label="Night ×"     value={form.night_multiplier} onChange={(v) => setForm((f) => ({ ...f, night_multiplier: v }))} placeholder="1.5" />
-              </div>
+            <div className="mt-6 grid grid-cols-2 gap-4">
+              <Field label="Auto base ₹" min={0} max={2000} k="auto_base" form={form} setForm={setForm} err={errors.auto_base} placeholder="25" />
+              <Field label="Auto ₹/km"   min={0} max={500}  k="auto_per_km" form={form} setForm={setForm} err={errors.auto_per_km} placeholder="14" />
+              <Field label="Taxi base ₹" min={0} max={5000} k="taxi_base" form={form} setForm={setForm} err={errors.taxi_base} placeholder="150" />
+              <Field label="Taxi ₹/km"   min={0} max={500}  k="taxi_per_km" form={form} setForm={setForm} err={errors.taxi_per_km} placeholder="18" />
+              <Field label="Bus min ₹"   min={0} max={1000} k="bus_min" form={form} setForm={setForm} err={errors.bus_min} placeholder="15" />
+              <Field label="Bus max ₹"   min={0} max={5000} k="bus_max" form={form} setForm={setForm} err={errors.bus_max} placeholder="120" />
+              <Field label="Peak × (1–3)"  min={1} max={3} step={0.05} k="peak_multiplier" form={form} setForm={setForm} err={errors.peak_multiplier} placeholder="1.3" />
+              <Field label="Night × (1–3)" min={1} max={3} step={0.05} k="night_multiplier" form={form} setForm={setForm} err={errors.night_multiplier} placeholder="1.5" />
+            </div>
 
-              <div className="mt-6 flex items-center gap-3">
+            {errors.form && (
+              <p className="mt-4 rounded-lg border border-saffron/40 bg-saffron/10 p-3 text-xs text-saffron">{errors.form}</p>
+            )}
+
+            <div className="mt-6 flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={saveMut.isPending}
+                className="rounded-full bg-primary px-5 py-2 text-primary-foreground disabled:opacity-50"
+              >
+                {saveMut.isPending ? "Saving…" : "Save override"}
+              </button>
+              {hasOverride && (
                 <button
-                  type="submit"
-                  disabled={saveMut.isPending}
-                  className="rounded-full bg-primary px-5 py-2 text-primary-foreground disabled:opacity-50"
+                  type="button"
+                  onClick={() => deleteMut.mutate(form.city_slug)}
+                  className="rounded-full border border-border px-5 py-2 text-sm hover:border-saffron hover:text-saffron"
                 >
-                  {saveMut.isPending ? "Saving…" : "Save override"}
+                  Remove override
                 </button>
-                {overrides?.some((o) => o.city_slug === form.city_slug) && (
-                  <button
-                    type="button"
-                    onClick={() => deleteMut.mutate(form.city_slug)}
-                    className="rounded-full border border-border px-5 py-2 text-sm hover:border-saffron hover:text-saffron"
-                  >
-                    Remove override
-                  </button>
-                )}
-                {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
-              </div>
-            </form>
+              )}
+              {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
+            </div>
+          </form>
 
-            <div className="md:col-span-5">
+          <div className="md:col-span-5 space-y-8">
+            <div>
               <span className="eyebrow text-teal-deep">Active overrides</span>
               <div className="mt-3 space-y-2">
                 {isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
@@ -195,25 +245,77 @@ function AdminFaresPage() {
                 ))}
               </div>
             </div>
+
+            <div>
+              <span className="eyebrow text-saffron">Audit log · {form.city_slug}</span>
+              <div className="mt-3 space-y-2 max-h-[420px] overflow-auto pr-1">
+                {auditEntries?.length === 0 && <p className="text-xs text-muted-foreground">No changes recorded yet.</p>}
+                {auditEntries?.map((a: AuditEntry) => (
+                  <div key={a.id} className="rounded-xl border border-border p-3 text-xs">
+                    <div className="flex justify-between">
+                      <span className={`font-medium ${a.action === "delete" ? "text-saffron" : "text-primary"}`}>
+                        {a.action === "delete" ? "Removed" : "Updated"}
+                      </span>
+                      <time className="text-muted-foreground">{new Date(a.created_at).toLocaleString()}</time>
+                    </div>
+                    <div className="mt-1 text-muted-foreground">{a.changed_by_email ?? a.changed_by.slice(0, 8) + "…"}</div>
+                    {a.changed_fields && a.changed_fields.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {a.changed_fields.map((f) => <span key={f} className="rounded-full bg-secondary px-2 py-0.5 text-[10px]">{f}</span>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-function Field({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+function buildPayload(form: FormState) {
+  return {
+    city_slug: form.city_slug,
+    auto_base: toNum(form.auto_base),
+    auto_per_km: toNum(form.auto_per_km),
+    taxi_base: toNum(form.taxi_base),
+    taxi_per_km: toNum(form.taxi_per_km),
+    bus_min: toNum(form.bus_min),
+    bus_max: toNum(form.bus_max),
+    peak_multiplier: toNum(form.peak_multiplier),
+    night_multiplier: toNum(form.night_multiplier),
+  };
+}
+
+function Field({
+  label, k, form, setForm, err, placeholder, min, max, step,
+}: {
+  label: string;
+  k: FormKey;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  err?: string;
+  placeholder?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+}) {
   return (
     <label className="block text-sm">
       <span className="eyebrow text-muted-foreground">{label}</span>
       <input
         type="number"
-        step="0.01"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        step={step ?? 0.01}
+        min={min}
+        max={max}
+        value={form[k]}
+        onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
         placeholder={placeholder}
-        className="mt-1 w-full rounded-lg border border-border bg-background p-2"
+        className={`mt-1 w-full rounded-lg border bg-background p-2 ${err ? "border-saffron" : "border-border"}`}
       />
+      {err && <span className="mt-1 block text-[11px] text-saffron">{err}</span>}
     </label>
   );
 }
