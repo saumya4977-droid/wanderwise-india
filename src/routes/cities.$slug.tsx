@@ -320,3 +320,35 @@ function StayCard({ tier, data, accent }: { tier: string; data: { name: string; 
     </div>
   );
 }
+
+function FareBreakdown({ title, leg, fallback, loading, surge }: { title: string; leg: FareLeg | undefined; fallback: number; loading: boolean; surge: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-secondary/40 p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="eyebrow text-teal-deep">{title}</span>
+        {loading && <span className="text-[10px] text-muted-foreground">updating…</span>}
+      </div>
+      <div className="display mt-1 text-2xl text-primary">₹{leg?.total ?? fallback}</div>
+      {leg ? (
+        <dl className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+          <Row k="Base fare" v={`₹${leg.base}`} />
+          <Row k={`Distance · ₹${leg.perKm}/km × ${leg.km} km`} v={`₹${Math.round(leg.perKm * leg.km)}`} />
+          <Row k="Subtotal" v={`₹${leg.subtotal}`} />
+          {surge > 1 && <Row k={`Surge ×${surge.toFixed(2)}`} v={`+₹${leg.surgeAmount}`} accent />}
+          <Row k="Total" v={`₹${leg.total}`} bold />
+        </dl>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">Loading live breakdown…</p>
+      )}
+    </div>
+  );
+}
+
+function Row({ k, v, accent, bold }: { k: string; v: string; accent?: boolean; bold?: boolean }) {
+  return (
+    <div className={`flex justify-between ${accent ? "text-saffron" : ""} ${bold ? "border-t border-border pt-1 font-medium text-foreground" : ""}`}>
+      <dt>{k}</dt>
+      <dd>{v}</dd>
+    </div>
+  );
+}
