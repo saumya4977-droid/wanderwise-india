@@ -17,14 +17,16 @@ export interface FareOverride {
   updated_at: string;
 }
 
+type JsonValue = string | number | boolean | null | { [k: string]: JsonValue } | JsonValue[];
+
 export interface AuditEntry {
   id: string;
   city_slug: string;
   action: "upsert" | "delete";
   changed_by: string;
   changed_by_email: string | null;
-  before_values: Record<string, unknown> | null;
-  after_values: Record<string, unknown> | null;
+  before_values: JsonValue | null;
+  after_values: JsonValue | null;
   changed_fields: string[] | null;
   created_at: string;
 }
