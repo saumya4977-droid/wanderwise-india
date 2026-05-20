@@ -200,18 +200,46 @@ function CityPage() {
                   <input type="range" min={1} max={50} value={km} onChange={(e) => setKm(Number(e.target.value))} className="flex-1 accent-[oklch(0.46_0.10_200)]" />
                   <div className="display text-2xl text-primary">{km} km</div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl bg-secondary p-3">
-                    Auto · <span className="display text-xl text-primary">₹{autoFare}</span>
-                    {fareLoading && <span className="ml-2 text-xs text-muted-foreground">updating…</span>}
-                  </div>
-                  <div className="rounded-xl bg-secondary p-3">
-                    Taxi · <span className="display text-xl text-primary">₹{taxiFare}</span>
+
+                <div className="mt-5">
+                  <span className="eyebrow text-teal-deep">Pickup time</span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setPickupHour("now")}
+                      className={`rounded-full px-3 py-1 text-xs ${pickupHour === "now" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+                    >
+                      Now
+                    </button>
+                    {[6, 9, 13, 18, 22, 1].map((h) => (
+                      <button
+                        key={h}
+                        onClick={() => setPickupHour(h)}
+                        className={`rounded-full px-3 py-1 text-xs ${pickupHour === h ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+                      >
+                        {h.toString().padStart(2, "0")}:00
+                      </button>
+                    ))}
+                    <select
+                      value={pickupHour === "now" ? "" : pickupHour}
+                      onChange={(e) => setPickupHour(e.target.value === "" ? "now" : Number(e.target.value))}
+                      className="rounded-full bg-secondary px-3 py-1 text-xs"
+                    >
+                      <option value="">Custom hour…</option>
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{i.toString().padStart(2, "0")}:00</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <FareBreakdown title="Auto rickshaw" leg={liveFare?.auto} fallback={autoFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
+                  <FareBreakdown title="Taxi (cab)" leg={liveFare?.taxi} fallback={taxiFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
+                </div>
+
                 {liveFare && (
                   <p className="mt-3 text-[11px] text-muted-foreground">
-                    Estimate refreshes every 60s · source: {liveFare.source}
+                    Pickup hour {liveFare.pickupHour.toString().padStart(2, "0")}:00 IST · {liveFare.peak ? "peak" : liveFare.nightCharge ? "night" : "off-peak"} · refreshes every 60s · source: {liveFare.source}{liveFare.overrideApplied ? " · admin override" : ""}
                   </p>
                 )}
               </div>
