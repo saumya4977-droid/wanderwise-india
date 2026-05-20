@@ -1,11 +1,19 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { z } from "zod";
 import { audiences, cityBySlug, type Audience, type City } from "@/data/cities";
 import { getLiveFare, type FareLeg } from "@/lib/fares.functions";
 
+const searchSchema = z.object({
+  km: z.number().int().min(1).max(50).optional(),
+  pickup: z.number().int().min(0).max(23).optional(),
+  tab: z.enum(["Weather", "Places", "Transport", "Stay"]).optional(),
+});
+
 export const Route = createFileRoute("/cities/$slug")({
+  validateSearch: searchSchema,
   loader: ({ params }): { city: City } => {
     const city = cityBySlug(params.slug);
     if (!city) throw notFound();
@@ -30,10 +38,23 @@ const tabs: Tab[] = ["Weather", "Places", "Transport", "Stay"];
 
 function CityPage() {
   const { city } = Route.useLoaderData() as { city: City };
-  const [tab, setTab] = useState<Tab>("Weather");
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
+  const [tab, setTab] = useState<Tab>(search.tab ?? "Weather");
   const [audience, setAudience] = useState<"" | Audience>("");
-  const [km, setKm] = useState(8);
-  const [pickupHour, setPickupHour] = useState<number | "now">("now");
+  const [km, setKmRaw] = useState(search.km ?? 8);
+  const [pickupHour, setPickupHourRaw] = useState<number | "now">(search.pickup ?? "now");
+  const [shareMsg, setShareMsg] = useState<string | null>(null);
+
+  type SearchT = z.infer<typeof searchSchema>;
+  const setKm = (v: number) => {
+    setKmRaw(v);
+    navigate({ search: (s: SearchT) => ({ ...s, km: v }), replace: true });
+  };
+  const setPickupHour = (v: number | "now") => {
+    setPickupHourRaw(v);
+    navigate({ search: (s: SearchT) => ({ ...s, pickup: v === "now" ? undefined : v }), replace: true });
+  };
 
   const placesFiltered = useMemo(
     () => audience ? city.places.filter(p => p.audiences.includes(audience)) : city.places,
@@ -51,6 +72,29 @@ function CityPage() {
 
   const taxiFare = liveFare?.taxi.total ?? 150 + km * 18;
   const autoFare = liveFare?.auto.total ?? 25 + km * 14;
+
+  const handleShare = async () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("km", String(km));
+    if (pickupHour !== "now") url.searchParams.set("pickup", String(pickupHour));
+    else url.searchParams.delete("pickup");
+    url.searchParams.set("tab", "Transport");
+    const link = url.toString();
+    const title = `${city.name} fare estimate · ${km} km`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, url: link });
+        setShareMsg("Shared!");
+      } else {
+        await navigator.clipboard.writeText(link);
+        setShareMsg("Link copied to clipboard");
+      }
+    } catch {
+      setShareMsg("Couldn't share — try again");
+    }
+    setTimeout(() => setShareMsg(null), 2500);
+  };
+
 
   return (
     <article>
@@ -232,16 +276,37 @@ function CityPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <FareBreakdown title="Auto rickshaw" leg={liveFare?.auto} fallback={autoFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
                   <FareBreakdown title="Taxi (cab)" leg={liveFare?.taxi} fallback={taxiFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
+                  <BusBreakdown
+                    busMin={liveFare?.bus.min}
+                    busMax={liveFare?.bus.max}
+                    surge={liveFare?.surge ?? 1}
+                    peak={liveFare?.peak ?? false}
+                    nightCharge={liveFare?.nightCharge ?? false}
+                    loading={fareLoading}
+                    fallback={city.transport.bus}
+                  />
                 </div>
 
-                {liveFare && (
-                  <p className="mt-3 text-[11px] text-muted-foreground">
-                    Pickup hour {liveFare.pickupHour.toString().padStart(2, "0")}:00 IST · {liveFare.peak ? "peak" : liveFare.nightCharge ? "night" : "off-peak"} · refreshes every 60s · source: {liveFare.source}{liveFare.overrideApplied ? " · admin override" : ""}
-                  </p>
-                )}
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                  {liveFare && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Pickup hour {liveFare.pickupHour.toString().padStart(2, "0")}:00 IST · {liveFare.peak ? "peak" : liveFare.nightCharge ? "night" : "off-peak"} · source: {liveFare.source}{liveFare.overrideApplied ? " · admin override" : ""}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    {shareMsg && <span className="text-[11px] text-teal-deep">{shareMsg}</span>}
+                    <button
+                      type="button"
+                      onClick={handleShare}
+                      className="rounded-full border border-border bg-card px-4 py-1.5 text-xs hover:border-primary hover:text-primary"
+                    >
+                      ↗ Share fare estimate
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="md:col-span-5">
@@ -349,6 +414,49 @@ function Row({ k, v, accent, bold }: { k: string; v: string; accent?: boolean; b
     <div className={`flex justify-between ${accent ? "text-saffron" : ""} ${bold ? "border-t border-border pt-1 font-medium text-foreground" : ""}`}>
       <dt>{k}</dt>
       <dd>{v}</dd>
+    </div>
+  );
+}
+
+function BusBreakdown({
+  busMin, busMax, surge, peak, nightCharge, loading, fallback,
+}: {
+  busMin: number | undefined;
+  busMax: number | undefined;
+  surge: number;
+  peak: boolean;
+  nightCharge: boolean;
+  loading: boolean;
+  fallback: string;
+}) {
+  const hasLive = typeof busMin === "number" && typeof busMax === "number";
+  const minTotal = hasLive ? Math.round(busMin! * surge) : null;
+  const maxTotal = hasLive ? Math.round(busMax! * surge) : null;
+  return (
+    <div className="rounded-xl border border-border bg-secondary/40 p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="eyebrow text-teal-deep">City / AC bus</span>
+        {loading && <span className="text-[10px] text-muted-foreground">updating…</span>}
+      </div>
+      <div className="display mt-1 text-2xl text-primary">
+        {hasLive ? `₹${minTotal}–₹${maxTotal}` : fallback}
+      </div>
+      {hasLive ? (
+        <dl className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+          <Row k="Short hop (per-range min)" v={`₹${busMin}`} />
+          <Row k="Long route (per-range max)" v={`₹${busMax}`} />
+          {surge > 1 && (
+            <Row
+              k={`${nightCharge ? "Night" : peak ? "Peak" : "Surge"} ×${surge.toFixed(2)}`}
+              v={`+₹${Math.round((busMax! - busMin!) * (surge - 1)) + Math.round(busMin! * (surge - 1))}`}
+              accent
+            />
+          )}
+          <Row k="Adjusted range" v={`₹${minTotal}–₹${maxTotal}`} bold />
+        </dl>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">Indicative only — most state buses use distance slabs.</p>
+      )}
     </div>
   );
 }
