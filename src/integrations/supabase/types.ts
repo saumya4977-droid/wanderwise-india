@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      fare_overrides: {
+        Row: {
+          auto_base: number | null
+          auto_per_km: number | null
+          bus_max: number | null
+          bus_min: number | null
+          city_slug: string
+          created_at: string
+          id: string
+          night_multiplier: number | null
+          peak_multiplier: number | null
+          taxi_base: number | null
+          taxi_per_km: number | null
+          updated_at: string
+        }
+        Insert: {
+          auto_base?: number | null
+          auto_per_km?: number | null
+          bus_max?: number | null
+          bus_min?: number | null
+          city_slug: string
+          created_at?: string
+          id?: string
+          night_multiplier?: number | null
+          peak_multiplier?: number | null
+          taxi_base?: number | null
+          taxi_per_km?: number | null
+          updated_at?: string
+        }
+        Update: {
+          auto_base?: number | null
+          auto_per_km?: number | null
+          bus_max?: number | null
+          bus_min?: number | null
+          city_slug?: string
+          created_at?: string
+          id?: string
+          night_multiplier?: number | null
+          peak_multiplier?: number | null
+          taxi_base?: number | null
+          taxi_per_km?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       guides: {
         Row: {
           bio: string | null

@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { audiences, cityBySlug, type Audience, type City } from "@/data/cities";
-import { getLiveFare } from "@/lib/fares.functions";
+import { getLiveFare, type FareLeg } from "@/lib/fares.functions";
 
 export const Route = createFileRoute("/cities/$slug")({
   loader: ({ params }): { city: City } => {
@@ -33,6 +33,7 @@ function CityPage() {
   const [tab, setTab] = useState<Tab>("Weather");
   const [audience, setAudience] = useState<"" | Audience>("");
   const [km, setKm] = useState(8);
+  const [pickupHour, setPickupHour] = useState<number | "now">("now");
 
   const placesFiltered = useMemo(
     () => audience ? city.places.filter(p => p.audiences.includes(audience)) : city.places,
@@ -41,8 +42,8 @@ function CityPage() {
 
   const fetchFare = useServerFn(getLiveFare);
   const { data: liveFare, isFetching: fareLoading, isError: fareError, refetch: refetchFare } = useQuery({
-    queryKey: ["fare", city.slug, km],
-    queryFn: () => fetchFare({ data: { citySlug: city.slug, km } }),
+    queryKey: ["fare", city.slug, km, pickupHour],
+    queryFn: () => fetchFare({ data: { citySlug: city.slug, km, ...(pickupHour !== "now" ? { pickupHour } : {}) } }),
     staleTime: 60_000,
     refetchOnWindowFocus: false,
     enabled: tab === "Transport",
@@ -199,18 +200,46 @@ function CityPage() {
                   <input type="range" min={1} max={50} value={km} onChange={(e) => setKm(Number(e.target.value))} className="flex-1 accent-[oklch(0.46_0.10_200)]" />
                   <div className="display text-2xl text-primary">{km} km</div>
                 </div>
-                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                  <div className="rounded-xl bg-secondary p-3">
-                    Auto · <span className="display text-xl text-primary">₹{autoFare}</span>
-                    {fareLoading && <span className="ml-2 text-xs text-muted-foreground">updating…</span>}
-                  </div>
-                  <div className="rounded-xl bg-secondary p-3">
-                    Taxi · <span className="display text-xl text-primary">₹{taxiFare}</span>
+
+                <div className="mt-5">
+                  <span className="eyebrow text-teal-deep">Pickup time</span>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => setPickupHour("now")}
+                      className={`rounded-full px-3 py-1 text-xs ${pickupHour === "now" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+                    >
+                      Now
+                    </button>
+                    {[6, 9, 13, 18, 22, 1].map((h) => (
+                      <button
+                        key={h}
+                        onClick={() => setPickupHour(h)}
+                        className={`rounded-full px-3 py-1 text-xs ${pickupHour === h ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+                      >
+                        {h.toString().padStart(2, "0")}:00
+                      </button>
+                    ))}
+                    <select
+                      value={pickupHour === "now" ? "" : pickupHour}
+                      onChange={(e) => setPickupHour(e.target.value === "" ? "now" : Number(e.target.value))}
+                      className="rounded-full bg-secondary px-3 py-1 text-xs"
+                    >
+                      <option value="">Custom hour…</option>
+                      {Array.from({ length: 24 }, (_, i) => (
+                        <option key={i} value={i}>{i.toString().padStart(2, "0")}:00</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  <FareBreakdown title="Auto rickshaw" leg={liveFare?.auto} fallback={autoFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
+                  <FareBreakdown title="Taxi (cab)" leg={liveFare?.taxi} fallback={taxiFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
+                </div>
+
                 {liveFare && (
                   <p className="mt-3 text-[11px] text-muted-foreground">
-                    Estimate refreshes every 60s · source: {liveFare.source}
+                    Pickup hour {liveFare.pickupHour.toString().padStart(2, "0")}:00 IST · {liveFare.peak ? "peak" : liveFare.nightCharge ? "night" : "off-peak"} · refreshes every 60s · source: {liveFare.source}{liveFare.overrideApplied ? " · admin override" : ""}
                   </p>
                 )}
               </div>
@@ -288,6 +317,38 @@ function StayCard({ tier, data, accent }: { tier: string; data: { name: string; 
       <div className="mt-3 text-muted-foreground">From</div>
       <div className="display text-4xl text-primary">{data.price}</div>
       <div className="mt-1 text-xs text-muted-foreground">per night, indicative</div>
+    </div>
+  );
+}
+
+function FareBreakdown({ title, leg, fallback, loading, surge }: { title: string; leg: FareLeg | undefined; fallback: number; loading: boolean; surge: number }) {
+  return (
+    <div className="rounded-xl border border-border bg-secondary/40 p-4">
+      <div className="flex items-baseline justify-between">
+        <span className="eyebrow text-teal-deep">{title}</span>
+        {loading && <span className="text-[10px] text-muted-foreground">updating…</span>}
+      </div>
+      <div className="display mt-1 text-2xl text-primary">₹{leg?.total ?? fallback}</div>
+      {leg ? (
+        <dl className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+          <Row k="Base fare" v={`₹${leg.base}`} />
+          <Row k={`Distance · ₹${leg.perKm}/km × ${leg.km} km`} v={`₹${Math.round(leg.perKm * leg.km)}`} />
+          <Row k="Subtotal" v={`₹${leg.subtotal}`} />
+          {surge > 1 && <Row k={`Surge ×${surge.toFixed(2)}`} v={`+₹${leg.surgeAmount}`} accent />}
+          <Row k="Total" v={`₹${leg.total}`} bold />
+        </dl>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">Loading live breakdown…</p>
+      )}
+    </div>
+  );
+}
+
+function Row({ k, v, accent, bold }: { k: string; v: string; accent?: boolean; bold?: boolean }) {
+  return (
+    <div className={`flex justify-between ${accent ? "text-saffron" : ""} ${bold ? "border-t border-border pt-1 font-medium text-foreground" : ""}`}>
+      <dt>{k}</dt>
+      <dd>{v}</dd>
     </div>
   );
 }
