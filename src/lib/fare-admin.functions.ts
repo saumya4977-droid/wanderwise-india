@@ -144,8 +144,8 @@ export const upsertFareOverride = createServerFn({ method: "POST" })
         action: "upsert",
         changed_by: context.userId,
         changed_by_email: await getEmail(context.userId),
-        before_values: existing ?? null,
-        after_values: after,
+        before_values: (existing ?? null) as never,
+        after_values: after as never,
         changed_fields: changed,
       });
     }
