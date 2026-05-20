@@ -44,7 +44,7 @@ function AdminFaresPage() {
   const remove = useServerFn(deleteFareOverride);
   const qc = useQueryClient();
 
-  const cities = useMemo(() => allCities(), []);
+  const cities = useMemo<City[]>(() => allCitiesData, []);
   const [form, setForm] = useState<FormState>(() => empty(cities[0]?.slug ?? ""));
   const [msg, setMsg] = useState<string | null>(null);
 
