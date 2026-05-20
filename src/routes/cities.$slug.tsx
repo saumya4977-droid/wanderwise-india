@@ -46,13 +46,14 @@ function CityPage() {
   const [pickupHour, setPickupHourRaw] = useState<number | "now">(search.pickup ?? "now");
   const [shareMsg, setShareMsg] = useState<string | null>(null);
 
+  type SearchT = z.infer<typeof searchSchema>;
   const setKm = (v: number) => {
     setKmRaw(v);
-    navigate({ search: (s) => ({ ...s, km: v }), replace: true });
+    navigate({ search: (s: SearchT) => ({ ...s, km: v }), replace: true });
   };
   const setPickupHour = (v: number | "now") => {
     setPickupHourRaw(v);
-    navigate({ search: (s) => ({ ...s, pickup: v === "now" ? undefined : v }), replace: true });
+    navigate({ search: (s: SearchT) => ({ ...s, pickup: v === "now" ? undefined : v }), replace: true });
   };
 
   const placesFiltered = useMemo(
