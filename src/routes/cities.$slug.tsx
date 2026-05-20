@@ -276,16 +276,37 @@ function CityPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   <FareBreakdown title="Auto rickshaw" leg={liveFare?.auto} fallback={autoFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
                   <FareBreakdown title="Taxi (cab)" leg={liveFare?.taxi} fallback={taxiFare} loading={fareLoading} surge={liveFare?.surge ?? 1} />
+                  <BusBreakdown
+                    busMin={liveFare?.bus.min}
+                    busMax={liveFare?.bus.max}
+                    surge={liveFare?.surge ?? 1}
+                    peak={liveFare?.peak ?? false}
+                    nightCharge={liveFare?.nightCharge ?? false}
+                    loading={fareLoading}
+                    fallback={city.transport.bus}
+                  />
                 </div>
 
-                {liveFare && (
-                  <p className="mt-3 text-[11px] text-muted-foreground">
-                    Pickup hour {liveFare.pickupHour.toString().padStart(2, "0")}:00 IST · {liveFare.peak ? "peak" : liveFare.nightCharge ? "night" : "off-peak"} · refreshes every 60s · source: {liveFare.source}{liveFare.overrideApplied ? " · admin override" : ""}
-                  </p>
-                )}
+                <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                  {liveFare && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Pickup hour {liveFare.pickupHour.toString().padStart(2, "0")}:00 IST · {liveFare.peak ? "peak" : liveFare.nightCharge ? "night" : "off-peak"} · source: {liveFare.source}{liveFare.overrideApplied ? " · admin override" : ""}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-2">
+                    {shareMsg && <span className="text-[11px] text-teal-deep">{shareMsg}</span>}
+                    <button
+                      type="button"
+                      onClick={handleShare}
+                      className="rounded-full border border-border bg-card px-4 py-1.5 text-xs hover:border-primary hover:text-primary"
+                    >
+                      ↗ Share fare estimate
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="md:col-span-5">
