@@ -179,7 +179,7 @@ export const deleteFareOverride = createServerFn({ method: "POST" })
         action: "delete",
         changed_by: context.userId,
         changed_by_email: await getEmail(context.userId),
-        before_values: existing,
+        before_values: existing as never,
         after_values: null,
         changed_fields: Object.keys(existing).filter(
           (k) => !["id", "city_slug", "created_at", "updated_at"].includes(k),
