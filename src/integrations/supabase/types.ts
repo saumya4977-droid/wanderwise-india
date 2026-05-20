@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      fare_override_audit: {
+        Row: {
+          action: string
+          after_values: Json | null
+          before_values: Json | null
+          changed_by: string
+          changed_by_email: string | null
+          changed_fields: string[] | null
+          city_slug: string
+          created_at: string
+          id: string
+        }
+        Insert: {
+          action: string
+          after_values?: Json | null
+          before_values?: Json | null
+          changed_by: string
+          changed_by_email?: string | null
+          changed_fields?: string[] | null
+          city_slug: string
+          created_at?: string
+          id?: string
+        }
+        Update: {
+          action?: string
+          after_values?: Json | null
+          before_values?: Json | null
+          changed_by?: string
+          changed_by_email?: string | null
+          changed_fields?: string[] | null
+          city_slug?: string
+          created_at?: string
+          id?: string
+        }
+        Relationships: []
+      }
       fare_overrides: {
         Row: {
           auto_base: number | null
