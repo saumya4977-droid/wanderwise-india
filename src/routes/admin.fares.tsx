@@ -9,6 +9,7 @@ import {
   upsertFareOverride,
   deleteFareOverride,
   listAuditEntries,
+  revertAuditEntry,
   upsertFareOverrideSchema,
   type FareOverride,
   type AuditEntry,
@@ -54,12 +55,31 @@ function AdminFaresPage() {
   const upsert = useServerFn(upsertFareOverride);
   const remove = useServerFn(deleteFareOverride);
   const audit = useServerFn(listAuditEntries);
+  const revert = useServerFn(revertAuditEntry);
   const qc = useQueryClient();
 
   const cities = useMemo<City[]>(() => allCitiesData, []);
   const [form, setForm] = useState<FormState>(() => empty(cities[0]?.slug ?? ""));
   const [errors, setErrors] = useState<Partial<Record<FormKey | "form", string>>>({});
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Audit filters
+  const [filterCity, setFilterCity] = useState<string>(""); // "" = current form city
+  const [filterAction, setFilterAction] = useState<"" | "upsert" | "delete">("");
+  const [filterEmail, setFilterEmail] = useState("");
+  const [filterFrom, setFilterFrom] = useState(""); // YYYY-MM-DD
+  const [filterTo, setFilterTo] = useState("");
+
+  const effectiveCitySlug = filterCity || form.city_slug;
+
+  const auditParams = useMemo(() => {
+    const p: Record<string, unknown> = { city_slug: effectiveCitySlug, limit: 200 };
+    if (filterAction) p.action = filterAction;
+    if (filterEmail.trim()) p.email_query = filterEmail.trim();
+    if (filterFrom) p.from = new Date(filterFrom + "T00:00:00").toISOString();
+    if (filterTo) p.to = new Date(filterTo + "T23:59:59").toISOString();
+    return p;
+  }, [effectiveCitySlug, filterAction, filterEmail, filterFrom, filterTo]);
 
   const { data: overrides, isLoading, error } = useQuery({
     queryKey: ["fare-overrides"],
@@ -68,10 +88,11 @@ function AdminFaresPage() {
   });
 
   const { data: auditEntries } = useQuery({
-    queryKey: ["fare-audit", form.city_slug],
-    queryFn: () => audit({ data: { city_slug: form.city_slug, limit: 25 } }),
+    queryKey: ["fare-audit", auditParams],
+    queryFn: () => audit({ data: auditParams }),
     enabled: !!user,
   });
+
 
   function validate(): { ok: true; values: ReturnType<typeof buildPayload> } | { ok: false } {
     const errs: Partial<Record<FormKey | "form", string>> = {};
@@ -124,6 +145,38 @@ function AdminFaresPage() {
       qc.invalidateQueries({ queryKey: ["fare-audit"] });
     },
   });
+
+  const revertMut = useMutation({
+    mutationFn: (audit_id: string) => revert({ data: { audit_id } }),
+    onSuccess: (r) => {
+      setMsg(r.action === "delete" ? "Reverted — override removed." : "Reverted to previous values.");
+      qc.invalidateQueries({ queryKey: ["fare-overrides"] });
+      qc.invalidateQueries({ queryKey: ["fare-audit"] });
+    },
+    onError: (e: Error) => setMsg(e.message),
+  });
+
+  function exportAuditCsv() {
+    const rows = auditEntries ?? [];
+    const header = ["created_at","city_slug","action","changed_by_email","changed_by","changed_fields","before_values","after_values"];
+    const esc = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const csv = [
+      header.join(","),
+      ...rows.map((r) => [r.created_at, r.city_slug, r.action, r.changed_by_email, r.changed_by, r.changed_fields, r.before_values, r.after_values].map(esc).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `fare-audit-${effectiveCitySlug}-${today}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
 
   useEffect(() => {
     const o = overrides?.find((x) => x.city_slug === form.city_slug);
@@ -247,14 +300,65 @@ function AdminFaresPage() {
             </div>
 
             <div>
-              <span className="eyebrow text-saffron">Audit log · {form.city_slug}</span>
+              <div className="flex items-center justify-between gap-2">
+                <span className="eyebrow text-saffron">Audit log</span>
+                <button
+                  onClick={exportAuditCsv}
+                  disabled={!auditEntries || auditEntries.length === 0}
+                  className="rounded-full border border-border px-3 py-1 text-[11px] hover:border-saffron hover:text-saffron disabled:opacity-40"
+                >
+                  Export CSV
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-2 rounded-xl border border-border p-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={filterCity}
+                    onChange={(e) => setFilterCity(e.target.value)}
+                    className="rounded-md border border-border bg-background p-1.5 text-xs"
+                  >
+                    <option value="">City: {form.city_slug}</option>
+                    {cities.map((c) => <option key={c.slug} value={c.slug}>{c.slug}</option>)}
+                  </select>
+                  <select
+                    value={filterAction}
+                    onChange={(e) => setFilterAction(e.target.value as "" | "upsert" | "delete")}
+                    className="rounded-md border border-border bg-background p-1.5 text-xs"
+                  >
+                    <option value="">All actions</option>
+                    <option value="upsert">Updated</option>
+                    <option value="delete">Removed</option>
+                  </select>
+                </div>
+                <input
+                  value={filterEmail}
+                  onChange={(e) => setFilterEmail(e.target.value)}
+                  placeholder="Filter by admin email…"
+                  className="w-full rounded-md border border-border bg-background p-1.5 text-xs"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="date" value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)} className="rounded-md border border-border bg-background p-1.5 text-xs" />
+                  <input type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} className="rounded-md border border-border bg-background p-1.5 text-xs" />
+                </div>
+                {(filterCity || filterAction || filterEmail || filterFrom || filterTo) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFilterCity(""); setFilterAction(""); setFilterEmail(""); setFilterFrom(""); setFilterTo(""); }}
+                    className="text-[11px] text-muted-foreground underline"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+
               <div className="mt-3 space-y-2 max-h-[420px] overflow-auto pr-1">
-                {auditEntries?.length === 0 && <p className="text-xs text-muted-foreground">No changes recorded yet.</p>}
+                {auditEntries?.length === 0 && <p className="text-xs text-muted-foreground">No changes match these filters.</p>}
                 {auditEntries?.map((a: AuditEntry) => (
                   <div key={a.id} className="rounded-xl border border-border p-3 text-xs">
                     <div className="flex justify-between">
                       <span className={`font-medium ${a.action === "delete" ? "text-saffron" : "text-primary"}`}>
-                        {a.action === "delete" ? "Removed" : "Updated"}
+                        {a.action === "delete" ? "Removed" : "Updated"} · {a.city_slug}
                       </span>
                       <time className="text-muted-foreground">{new Date(a.created_at).toLocaleString()}</time>
                     </div>
@@ -264,6 +368,19 @@ function AdminFaresPage() {
                         {a.changed_fields.map((f) => <span key={f} className="rounded-full bg-secondary px-2 py-0.5 text-[10px]">{f}</span>)}
                       </div>
                     )}
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={() => {
+                          if (confirm(`Revert ${a.city_slug} to the values from before this change?`)) {
+                            revertMut.mutate(a.id);
+                          }
+                        }}
+                        disabled={revertMut.isPending}
+                        className="rounded-full border border-border px-3 py-1 text-[11px] hover:border-primary hover:text-primary disabled:opacity-40"
+                      >
+                        Revert to previous values
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
