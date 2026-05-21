@@ -416,13 +416,27 @@ function Field({
   err?: string;
   placeholder?: string;
   min?: number;
-
-          </div>
-        </div>
-      )}
-    </div>
+  max?: number;
+  step?: number;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="eyebrow text-muted-foreground">{label}</span>
+      <input
+        type="number"
+        step={step ?? 0.01}
+        min={min}
+        max={max}
+        value={form[k]}
+        onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
+        placeholder={placeholder}
+        className={`mt-1 w-full rounded-lg border bg-background p-2 ${err ? "border-saffron" : "border-border"}`}
+      />
+      {err && <span className="mt-1 block text-[11px] text-saffron">{err}</span>}
+    </label>
   );
 }
+
 
 function buildPayload(form: FormState) {
   return {
