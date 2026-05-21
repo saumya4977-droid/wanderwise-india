@@ -13,6 +13,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as PricingRouteImport } from './routes/pricing'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
 import { Route as GuidesRouteImport } from './routes/guides'
+import { Route as CompareRouteImport } from './routes/compare'
 import { Route as CitiesRouteImport } from './routes/cities'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
@@ -37,6 +38,11 @@ const HowItWorksRoute = HowItWorksRouteImport.update({
 const GuidesRoute = GuidesRouteImport.update({
   id: '/guides',
   path: '/guides',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CompareRoute = CompareRouteImport.update({
+  id: '/compare',
+  path: '/compare',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CitiesRoute = CitiesRouteImport.update({
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cities': typeof CitiesRouteWithChildren
+  '/compare': typeof CompareRoute
   '/guides': typeof GuidesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/pricing': typeof PricingRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cities': typeof CitiesRouteWithChildren
+  '/compare': typeof CompareRoute
   '/guides': typeof GuidesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/pricing': typeof PricingRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/cities': typeof CitiesRouteWithChildren
+  '/compare': typeof CompareRoute
   '/guides': typeof GuidesRoute
   '/how-it-works': typeof HowItWorksRoute
   '/pricing': typeof PricingRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cities'
+    | '/compare'
     | '/guides'
     | '/how-it-works'
     | '/pricing'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cities'
+    | '/compare'
     | '/guides'
     | '/how-it-works'
     | '/pricing'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/cities'
+    | '/compare'
     | '/guides'
     | '/how-it-works'
     | '/pricing'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthRoute: typeof AuthRoute
   CitiesRoute: typeof CitiesRouteWithChildren
+  CompareRoute: typeof CompareRoute
   GuidesRoute: typeof GuidesRoute
   HowItWorksRoute: typeof HowItWorksRoute
   PricingRoute: typeof PricingRoute
@@ -174,6 +187,13 @@ declare module '@tanstack/react-router' {
       path: '/guides'
       fullPath: '/guides'
       preLoaderRoute: typeof GuidesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/compare': {
+      id: '/compare'
+      path: '/compare'
+      fullPath: '/compare'
+      preLoaderRoute: typeof CompareRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cities': {
@@ -229,6 +249,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   CitiesRoute: CitiesRouteWithChildren,
+  CompareRoute: CompareRoute,
   GuidesRoute: GuidesRoute,
   HowItWorksRoute: HowItWorksRoute,
   PricingRoute: PricingRoute,
@@ -238,3 +259,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
