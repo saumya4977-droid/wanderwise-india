@@ -55,12 +55,31 @@ function AdminFaresPage() {
   const upsert = useServerFn(upsertFareOverride);
   const remove = useServerFn(deleteFareOverride);
   const audit = useServerFn(listAuditEntries);
+  const revert = useServerFn(revertAuditEntry);
   const qc = useQueryClient();
 
   const cities = useMemo<City[]>(() => allCitiesData, []);
   const [form, setForm] = useState<FormState>(() => empty(cities[0]?.slug ?? ""));
   const [errors, setErrors] = useState<Partial<Record<FormKey | "form", string>>>({});
   const [msg, setMsg] = useState<string | null>(null);
+
+  // Audit filters
+  const [filterCity, setFilterCity] = useState<string>(""); // "" = current form city
+  const [filterAction, setFilterAction] = useState<"" | "upsert" | "delete">("");
+  const [filterEmail, setFilterEmail] = useState("");
+  const [filterFrom, setFilterFrom] = useState(""); // YYYY-MM-DD
+  const [filterTo, setFilterTo] = useState("");
+
+  const effectiveCitySlug = filterCity || form.city_slug;
+
+  const auditParams = useMemo(() => {
+    const p: Record<string, unknown> = { city_slug: effectiveCitySlug, limit: 200 };
+    if (filterAction) p.action = filterAction;
+    if (filterEmail.trim()) p.email_query = filterEmail.trim();
+    if (filterFrom) p.from = new Date(filterFrom + "T00:00:00").toISOString();
+    if (filterTo) p.to = new Date(filterTo + "T23:59:59").toISOString();
+    return p;
+  }, [effectiveCitySlug, filterAction, filterEmail, filterFrom, filterTo]);
 
   const { data: overrides, isLoading, error } = useQuery({
     queryKey: ["fare-overrides"],
@@ -69,10 +88,11 @@ function AdminFaresPage() {
   });
 
   const { data: auditEntries } = useQuery({
-    queryKey: ["fare-audit", form.city_slug],
-    queryFn: () => audit({ data: { city_slug: form.city_slug, limit: 25 } }),
+    queryKey: ["fare-audit", auditParams],
+    queryFn: () => audit({ data: auditParams }),
     enabled: !!user,
   });
+
 
   function validate(): { ok: true; values: ReturnType<typeof buildPayload> } | { ok: false } {
     const errs: Partial<Record<FormKey | "form", string>> = {};
