@@ -9,6 +9,7 @@ import {
   upsertFareOverride,
   deleteFareOverride,
   listAuditEntries,
+  revertAuditEntry,
   upsertFareOverrideSchema,
   type FareOverride,
   type AuditEntry,
