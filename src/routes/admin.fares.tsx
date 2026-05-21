@@ -146,6 +146,38 @@ function AdminFaresPage() {
     },
   });
 
+  const revertMut = useMutation({
+    mutationFn: (audit_id: string) => revert({ data: { audit_id } }),
+    onSuccess: (r) => {
+      setMsg(r.action === "delete" ? "Reverted — override removed." : "Reverted to previous values.");
+      qc.invalidateQueries({ queryKey: ["fare-overrides"] });
+      qc.invalidateQueries({ queryKey: ["fare-audit"] });
+    },
+    onError: (e: Error) => setMsg(e.message),
+  });
+
+  function exportAuditCsv() {
+    const rows = auditEntries ?? [];
+    const header = ["created_at","city_slug","action","changed_by_email","changed_by","changed_fields","before_values","after_values"];
+    const esc = (v: unknown) => {
+      const s = v === null || v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+    const csv = [
+      header.join(","),
+      ...rows.map((r) => [r.created_at, r.city_slug, r.action, r.changed_by_email, r.changed_by, r.changed_fields, r.before_values, r.after_values].map(esc).join(",")),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `fare-audit-${effectiveCitySlug}-${today}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+
   useEffect(() => {
     const o = overrides?.find((x) => x.city_slug === form.city_slug);
     setErrors({});
