@@ -192,7 +192,16 @@ export const deleteFareOverride = createServerFn({ method: "POST" })
 export const listAuditEntries = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ city_slug: z.string().max(64).optional(), limit: z.number().int().min(1).max(200).optional() }).parse(input ?? {}),
+    z
+      .object({
+        city_slug: z.string().max(64).optional(),
+        action: z.enum(["upsert", "delete"]).optional(),
+        email_query: z.string().max(120).optional(),
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        limit: z.number().int().min(1).max(1000).optional(),
+      })
+      .parse(input ?? {}),
   )
   .handler(async ({ data, context }): Promise<AuditEntry[]> => {
     await assertAdmin(context.userId);
@@ -200,11 +209,94 @@ export const listAuditEntries = createServerFn({ method: "GET" })
       .from("fare_override_audit")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(data.limit ?? 50);
+      .limit(data.limit ?? 100);
     if (data.city_slug) q = q.eq("city_slug", data.city_slug);
+    if (data.action) q = q.eq("action", data.action);
+    if (data.email_query) q = q.ilike("changed_by_email", `%${data.email_query}%`);
+    if (data.from) q = q.gte("created_at", data.from);
+    if (data.to) q = q.lte("created_at", data.to);
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
     return (rows ?? []) as AuditEntry[];
+  });
+
+const OVERRIDE_FIELDS = [
+  "auto_base", "auto_per_km", "taxi_base", "taxi_per_km",
+  "bus_min", "bus_max", "peak_multiplier", "night_multiplier",
+] as const;
+
+export const revertAuditEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ audit_id: z.string().uuid() }).parse(input),
+  )
+  .handler(async ({ data, context }): Promise<{ ok: true; action: "upsert" | "delete" }> => {
+    await assertAdmin(context.userId);
+
+    const { data: entry, error: loadErr } = await supabaseAdmin
+      .from("fare_override_audit")
+      .select("*")
+      .eq("id", data.audit_id)
+      .maybeSingle();
+    if (loadErr) throw new Error(loadErr.message);
+    if (!entry) throw new Error("Audit entry not found");
+
+    const citySlug = entry.city_slug as string;
+    const before = entry.before_values as Record<string, unknown> | null;
+
+    const { data: current } = await supabaseAdmin
+      .from("fare_overrides")
+      .select("*")
+      .eq("city_slug", citySlug)
+      .maybeSingle();
+
+    const email = await getEmail(context.userId);
+
+    if (!before) {
+      const { error } = await supabaseAdmin
+        .from("fare_overrides")
+        .delete()
+        .eq("city_slug", citySlug);
+      if (error) throw new Error(error.message);
+      if (current) {
+        await supabaseAdmin.from("fare_override_audit").insert({
+          city_slug: citySlug,
+          action: "delete",
+          changed_by: context.userId,
+          changed_by_email: email,
+          before_values: current as never,
+          after_values: null,
+          changed_fields: ["__revert__"],
+        });
+      }
+      return { ok: true, action: "delete" };
+    }
+
+    const payload: Record<string, unknown> = { city_slug: citySlug };
+    for (const f of OVERRIDE_FIELDS) {
+      payload[f] = before[f] ?? null;
+    }
+    const parsed = upsertSchema.safeParse(payload);
+    if (!parsed.success) throw new Error("Cannot revert: previous values fail current validation");
+
+    const { data: row, error } = await supabaseAdmin
+      .from("fare_overrides")
+      .upsert(parsed.data, { onConflict: "city_slug" })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+
+    const changed = diffFields(current as Record<string, unknown> | null, row as Record<string, unknown>);
+    await supabaseAdmin.from("fare_override_audit").insert({
+      city_slug: citySlug,
+      action: "upsert",
+      changed_by: context.userId,
+      changed_by_email: email,
+      before_values: (current ?? null) as never,
+      after_values: row as never,
+      changed_fields: ["__revert__", ...changed],
+    });
+    return { ok: true, action: "upsert" };
   });
 
 // Re-export for client-side validation
