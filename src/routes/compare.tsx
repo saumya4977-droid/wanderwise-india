@@ -77,7 +77,7 @@ function ComparePage() {
   const fetchFare = useServerFn(getLiveFare);
 
   const initialLinks = useMemo(() => {
-    const fromUrl = (search.links ?? "").split("|").map((s) => s.trim()).filter(Boolean);
+    const fromUrl = (search.links ?? "").split("|").map((s: string) => s.trim()).filter(Boolean);
     if (fromUrl.length >= 2) return [...fromUrl, ...Array(Math.max(0, 2 - fromUrl.length)).fill("")];
     const origin = typeof window !== "undefined" ? window.location.origin : "";
     return [
