@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { z } from "zod";
 import { audiences, cityBySlug, type Audience, type City } from "@/data/cities";
 import { getLiveFare, type FareLeg } from "@/lib/fares.functions";
+import { getWeather, type LiveWeather } from "@/lib/weather.functions";
 
 const searchSchema = z.object({
   km: z.number().int().min(1).max(50).optional(),
@@ -70,6 +71,15 @@ function CityPage() {
     enabled: tab === "Transport",
   });
 
+  const fetchWeather = useServerFn(getWeather);
+  const { data: liveWeather, isFetching: weatherLoading } = useQuery({
+    queryKey: ["weather", city.slug],
+    queryFn: () => fetchWeather({ data: { citySlug: city.slug } }),
+    staleTime: 10 * 60_000,
+    refetchOnWindowFocus: false,
+    enabled: tab === "Weather",
+  });
+
   const taxiFare = liveFare?.taxi.total ?? 150 + km * 18;
   const autoFare = liveFare?.auto.total ?? 25 + km * 14;
 
@@ -133,36 +143,7 @@ function CityPage() {
 
       <div className="mx-auto max-w-7xl px-6 py-16">
         {tab === "Weather" && (
-          <div className="grid gap-10 md:grid-cols-12">
-            <div className="md:col-span-5">
-              <span className="eyebrow text-teal-deep">Right now in {city.name}</span>
-              <div className="mt-3 display text-[120px] leading-none text-primary">{city.weather.current.tempC}°</div>
-              <div className="text-xl text-muted-foreground">{city.weather.current.condition}</div>
-              <div className="mt-6 grid grid-cols-2 gap-4">
-                <Stat label="Humidity" value={`${city.weather.current.humidity}%`} />
-                <Stat label="Wind" value={`${city.weather.current.wind} km/h`} />
-              </div>
-            </div>
-            <div className="md:col-span-7">
-              <span className="eyebrow text-saffron">Best season to visit</span>
-              <h2 className="display mt-3 text-5xl text-primary">{city.weather.best}</h2>
-              <p className="mt-4 text-muted-foreground">{city.weather.notes}</p>
-              <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
-                {[
-                  ["Spring", "Mar–May", "Festivals & blooms"],
-                  ["Summer", "Jun–Aug", "Hill escapes"],
-                  ["Monsoon", "Jul–Sep", "Lush, dramatic"],
-                  ["Winter", "Dec–Feb", "Crisp & cultural"],
-                ].map(([s, m, n]) => (
-                  <div key={s} className="rounded-2xl border border-border p-4">
-                    <div className="display text-xl text-primary">{s}</div>
-                    <div className="eyebrow text-muted-foreground">{m}</div>
-                    <div className="mt-2 text-xs text-muted-foreground">{n}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <WeatherTab city={city} live={liveWeather} loading={weatherLoading} />
         )}
 
         {tab === "Places" && (
@@ -457,6 +438,83 @@ function BusBreakdown({
       ) : (
         <p className="mt-2 text-[11px] text-muted-foreground">Indicative only — most state buses use distance slabs.</p>
       )}
+    </div>
+  );
+}
+
+function WeatherTab({ city, live, loading }: { city: City; live: LiveWeather | undefined; loading: boolean }) {
+  const c = live?.current ?? {
+    tempC: city.weather.current.tempC,
+    feelsLikeC: city.weather.current.tempC,
+    humidity: city.weather.current.humidity,
+    windKmh: city.weather.current.wind,
+    code: 0,
+    condition: city.weather.current.condition,
+  };
+  const source = live?.source ?? "fallback";
+  const daily = live?.daily ?? [];
+  return (
+    <div className="grid gap-10 md:grid-cols-12">
+      <div className="md:col-span-5">
+        <div className="flex items-center gap-2">
+          <span className="eyebrow text-teal-deep">Right now in {city.name}</span>
+          <span className={`text-[10px] ${source === "live" ? "text-teal-deep" : "text-muted-foreground"}`}>
+            {loading ? "· updating…" : source === "live" ? "· ● live" : "· ○ estimate"}
+          </span>
+        </div>
+        <div className="mt-3 display text-[clamp(4rem,18vw,120px)] leading-none text-primary">{c.tempC}°</div>
+        <div className="text-xl text-muted-foreground">{c.condition}</div>
+        <div className="mt-2 text-xs text-muted-foreground">Feels like {c.feelsLikeC}°</div>
+        <div className="mt-6 grid grid-cols-2 gap-4">
+          <Stat label="Humidity" value={`${c.humidity}%`} />
+          <Stat label="Wind" value={`${c.windKmh} km/h`} />
+        </div>
+        {live?.note && (
+          <p className="mt-4 text-[11px] text-muted-foreground">{live.note}</p>
+        )}
+      </div>
+      <div className="md:col-span-7">
+        <span className="eyebrow text-saffron">Best season to visit</span>
+        <h2 className="display mt-3 text-4xl text-primary md:text-5xl">{city.weather.best}</h2>
+        <p className="mt-4 text-muted-foreground">{city.weather.notes}</p>
+
+        {daily.length > 0 ? (
+          <>
+            <div className="mt-8 eyebrow text-teal-deep">Next 7 days</div>
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+              {daily.map((d) => {
+                const date = new Date(d.date);
+                const dow = date.toLocaleDateString("en-IN", { weekday: "short" });
+                return (
+                  <div key={d.date} className="rounded-2xl border border-border bg-card p-3 text-center">
+                    <div className="eyebrow text-muted-foreground">{dow}</div>
+                    <div className="display mt-1 text-xl text-primary">{d.tMax}°</div>
+                    <div className="text-[11px] text-muted-foreground">{d.tMin}°</div>
+                    {d.precipMm > 0 && (
+                      <div className="mt-1 text-[10px] text-teal-deep">{d.precipMm} mm</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+            {[
+              ["Spring", "Mar–May", "Festivals & blooms"],
+              ["Summer", "Jun–Aug", "Hill escapes"],
+              ["Monsoon", "Jul–Sep", "Lush, dramatic"],
+              ["Winter", "Dec–Feb", "Crisp & cultural"],
+            ].map(([s, m, n]) => (
+              <div key={s} className="rounded-2xl border border-border p-4">
+                <div className="display text-xl text-primary">{s}</div>
+                <div className="eyebrow text-muted-foreground">{m}</div>
+                <div className="mt-2 text-xs text-muted-foreground">{n}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
